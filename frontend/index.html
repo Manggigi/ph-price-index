@@ -1,0 +1,259 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PH Price Index — Philippine Daily Commodity Prices</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        :root {
+            --primary: #0D6E3A;
+            --primary-light: #1A9B56;
+            --accent: #FCD116;
+            --red: #CE1126;
+            --bg: #F5F7F5;
+            --card: #FFFFFF;
+            --text: #1A2E1A;
+            --text-light: #5A7A5A;
+            --border: #E0EAE0;
+            --shadow: 0 2px 12px rgba(13,110,58,0.08);
+        }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: var(--bg); color: var(--text); }
+        
+        .header {
+            background: linear-gradient(135deg, var(--primary), var(--primary-light));
+            color: white; padding: 2rem 1rem; text-align: center;
+        }
+        .header h1 { font-size: 2rem; font-weight: 800; }
+        .header h1 .flag { font-size: 1.6rem; }
+        .header p { opacity: 0.9; margin-top: 0.5rem; max-width: 600px; margin-left: auto; margin-right: auto; }
+        .header .badge { display: inline-block; background: var(--accent); color: var(--text); padding: 0.25rem 0.75rem; border-radius: 20px; font-size: 0.75rem; font-weight: 700; margin-top: 0.75rem; }
+
+        .container { max-width: 1000px; margin: 0 auto; padding: 1.5rem 1rem; }
+        
+        .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 0.75rem; margin-bottom: 1.5rem; }
+        .stat-card { background: var(--card); border-radius: 12px; padding: 1rem; text-align: center; box-shadow: var(--shadow); }
+        .stat-num { font-size: 1.5rem; font-weight: 800; color: var(--primary); }
+        .stat-label { font-size: 0.75rem; color: var(--text-light); margin-top: 0.25rem; }
+
+        .search-section { margin-bottom: 1.5rem; }
+        .search-bar { display: flex; gap: 0.5rem; }
+        .search-bar input {
+            flex: 1; padding: 0.75rem 1rem; border: 2px solid var(--border);
+            border-radius: 12px; font-size: 1rem; outline: none;
+        }
+        .search-bar input:focus { border-color: var(--primary); }
+        .search-bar button {
+            padding: 0.75rem 1.5rem; background: var(--primary); color: white;
+            border: none; border-radius: 12px; font-weight: 700; cursor: pointer;
+        }
+        .search-bar button:hover { background: var(--primary-light); }
+
+        .section-title { font-size: 1.1rem; font-weight: 700; margin: 1.5rem 0 0.75rem; display: flex; align-items: center; gap: 0.5rem; }
+        
+        .price-table { width: 100%; border-collapse: collapse; background: var(--card); border-radius: 12px; overflow: hidden; box-shadow: var(--shadow); }
+        .price-table thead { background: var(--primary); color: white; }
+        .price-table th { padding: 0.75rem; text-align: left; font-size: 0.8rem; font-weight: 600; }
+        .price-table td { padding: 0.6rem 0.75rem; border-bottom: 1px solid var(--border); font-size: 0.85rem; }
+        .price-table tr:last-child td { border: none; }
+        .price-table tr:hover { background: #F0FAF0; }
+        .price-val { font-weight: 700; color: var(--primary); }
+        .price-na { color: #CCC; font-style: italic; }
+        .cat-badge { font-size: 0.7rem; background: #E8F5E9; color: var(--primary); padding: 0.15rem 0.5rem; border-radius: 6px; }
+
+        .category-filters { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-bottom: 1rem; }
+        .cat-chip {
+            padding: 0.4rem 0.8rem; background: var(--card); border: 1.5px solid var(--border);
+            border-radius: 20px; font-size: 0.75rem; cursor: pointer; transition: all 0.2s;
+        }
+        .cat-chip:hover, .cat-chip.active { background: var(--primary); color: white; border-color: var(--primary); }
+
+        .date-nav { display: flex; align-items: center; gap: 0.75rem; margin-bottom: 1rem; }
+        .date-nav input[type="date"] { padding: 0.5rem; border: 2px solid var(--border); border-radius: 8px; font-size: 0.9rem; }
+        .date-label { font-size: 0.85rem; color: var(--text-light); }
+
+        .api-section { background: var(--card); border-radius: 12px; padding: 1.5rem; margin-top: 2rem; box-shadow: var(--shadow); }
+        .api-section h3 { margin-bottom: 0.75rem; }
+        .api-endpoint { background: #1A2E1A; color: #A8D8A8; padding: 0.5rem 1rem; border-radius: 8px; font-family: monospace; font-size: 0.8rem; margin-bottom: 0.5rem; overflow-x: auto; }
+        .api-endpoint .method { color: var(--accent); font-weight: 700; }
+
+        .loading { text-align: center; padding: 2rem; color: var(--text-light); }
+        .empty { text-align: center; padding: 2rem; color: var(--text-light); }
+
+        .footer { text-align: center; padding: 2rem 1rem; color: var(--text-light); font-size: 0.8rem; }
+        .footer a { color: var(--primary); }
+
+        @media (max-width: 600px) {
+            .price-table { font-size: 0.8rem; }
+            .price-table th, .price-table td { padding: 0.5rem; }
+        }
+    </style>
+</head>
+<body>
+
+<div class="header">
+    <h1><span class="flag">🇵🇭</span> PH Price Index</h1>
+    <p>Free, open-source Philippine daily commodity prices. No more PDFs.</p>
+    <div class="badge">OPEN DATA • FREE API • UPDATED DAILY</div>
+</div>
+
+<div class="container">
+    <div class="stats-grid" id="statsGrid">
+        <div class="stat-card"><div class="stat-num" id="statCommodities">—</div><div class="stat-label">Commodities</div></div>
+        <div class="stat-card"><div class="stat-num" id="statPrices">—</div><div class="stat-label">Price Records</div></div>
+        <div class="stat-card"><div class="stat-num" id="statDates">—</div><div class="stat-label">Days Tracked</div></div>
+        <div class="stat-card"><div class="stat-num" id="statLatest">—</div><div class="stat-label">Latest Data</div></div>
+    </div>
+
+    <div class="search-section">
+        <div class="search-bar">
+            <input type="text" id="searchInput" placeholder="Search commodities... (rice, galunggong, pork, etc.)">
+            <button onclick="doSearch()">Search</button>
+        </div>
+    </div>
+
+    <div class="date-nav">
+        <span class="date-label">📅 Date:</span>
+        <input type="date" id="dateInput" onchange="loadDate()">
+        <button onclick="loadLatest()" style="padding:0.4rem 0.8rem; background:var(--primary); color:white; border:none; border-radius:8px; font-size:0.8rem; cursor:pointer;">Latest</button>
+    </div>
+
+    <div class="category-filters" id="categoryFilters"></div>
+
+    <div id="priceContent">
+        <div class="loading">Loading prices...</div>
+    </div>
+
+    <div class="api-section">
+        <h3>🔌 Free API</h3>
+        <p style="font-size:0.85rem; color:var(--text-light); margin-bottom:1rem;">Use this data in your apps, research, or projects — no API key needed.</p>
+        <div class="api-endpoint"><span class="method">GET</span> /api/prices/latest</div>
+        <div class="api-endpoint"><span class="method">GET</span> /api/prices/2026-02-08</div>
+        <div class="api-endpoint"><span class="method">GET</span> /api/search?q=rice</div>
+        <div class="api-endpoint"><span class="method">GET</span> /api/commodities/Galunggong/history?days=30</div>
+        <p style="font-size:0.8rem; margin-top:0.75rem;"><a href="/docs" target="_blank">📖 Full API Docs (Swagger)</a> • <a href="https://github.com/Manggigi/ph-price-index" target="_blank">⭐ GitHub</a></p>
+    </div>
+</div>
+
+<div class="footer">
+    Data sourced from <a href="https://www.da.gov.ph/price-monitoring/" target="_blank">Department of Agriculture</a> • 
+    Built by <a href="https://github.com/Manggigi" target="_blank">@Manggigi</a> • 
+    <a href="https://github.com/Manggigi/ph-price-index" target="_blank">Open Source (MIT)</a>
+</div>
+
+<script>
+const API = window.location.origin;
+let allPrices = [];
+let activeCategory = null;
+
+async function init() {
+    loadStats();
+    loadLatest();
+}
+
+async function loadStats() {
+    try {
+        const resp = await fetch(`${API}/api/stats`);
+        const data = await resp.json();
+        document.getElementById('statCommodities').textContent = data.total_commodities || '—';
+        document.getElementById('statPrices').textContent = (data.total_prices || 0).toLocaleString();
+        document.getElementById('statDates').textContent = data.total_dates || '—';
+        document.getElementById('statLatest').textContent = data.last_date || '—';
+    } catch (e) { console.error('Stats failed:', e); }
+}
+
+async function loadLatest() {
+    document.getElementById('priceContent').innerHTML = '<div class="loading">Loading latest prices...</div>';
+    try {
+        const resp = await fetch(`${API}/api/prices/latest`);
+        const data = await resp.json();
+        if (data.date) document.getElementById('dateInput').value = data.date;
+        allPrices = data.prices || [];
+        renderPrices(allPrices);
+        buildCategoryFilters(allPrices);
+    } catch (e) {
+        document.getElementById('priceContent').innerHTML = '<div class="empty">Failed to load prices. Is the API running?</div>';
+    }
+}
+
+async function loadDate() {
+    const date = document.getElementById('dateInput').value;
+    if (!date) return;
+    document.getElementById('priceContent').innerHTML = '<div class="loading">Loading...</div>';
+    try {
+        const resp = await fetch(`${API}/api/prices/${date}`);
+        if (!resp.ok) throw new Error('No data');
+        const data = await resp.json();
+        allPrices = data.prices || [];
+        renderPrices(allPrices);
+        buildCategoryFilters(allPrices);
+    } catch (e) {
+        document.getElementById('priceContent').innerHTML = '<div class="empty">No data for this date.</div>';
+    }
+}
+
+async function doSearch() {
+    const q = document.getElementById('searchInput').value.trim();
+    if (!q) { loadLatest(); return; }
+    document.getElementById('priceContent').innerHTML = '<div class="loading">Searching...</div>';
+    try {
+        const resp = await fetch(`${API}/api/search?q=${encodeURIComponent(q)}`);
+        const data = await resp.json();
+        allPrices = data.results || [];
+        renderPrices(allPrices);
+        buildCategoryFilters(allPrices);
+    } catch (e) {
+        document.getElementById('priceContent').innerHTML = '<div class="empty">Search failed.</div>';
+    }
+}
+
+document.getElementById('searchInput').addEventListener('keypress', e => { if (e.key === 'Enter') doSearch(); });
+
+function buildCategoryFilters(prices) {
+    const cats = [...new Set(prices.map(p => p.category).filter(Boolean))].sort();
+    const container = document.getElementById('categoryFilters');
+    container.innerHTML = `<div class="cat-chip ${!activeCategory ? 'active' : ''}" onclick="filterCategory(null)">All</div>` +
+        cats.map(c => `<div class="cat-chip ${activeCategory === c ? 'active' : ''}" onclick="filterCategory('${c}')">${c}</div>`).join('');
+}
+
+function filterCategory(cat) {
+    activeCategory = cat;
+    const filtered = cat ? allPrices.filter(p => p.category === cat) : allPrices;
+    renderPrices(filtered);
+    buildCategoryFilters(allPrices);
+}
+
+function renderPrices(prices) {
+    if (!prices.length) {
+        document.getElementById('priceContent').innerHTML = '<div class="empty">No prices found.</div>';
+        return;
+    }
+    
+    // Group by category
+    const groups = {};
+    prices.forEach(p => {
+        const cat = p.category || 'OTHER';
+        if (!groups[cat]) groups[cat] = [];
+        groups[cat].push(p);
+    });
+
+    let html = '';
+    for (const [cat, items] of Object.entries(groups)) {
+        html += `<div class="section-title">${cat}</div>`;
+        html += `<table class="price-table"><thead><tr><th>Commodity</th><th>Specification</th><th>Price (₱)</th></tr></thead><tbody>`;
+        for (const item of items) {
+            const priceHtml = item.price !== null 
+                ? `<span class="price-val">₱${item.price.toFixed(2)}</span>`
+                : `<span class="price-na">n/a</span>`;
+            html += `<tr><td>${item.name}</td><td>${item.specification || '—'}</td><td>${priceHtml}</td></tr>`;
+        }
+        html += `</tbody></table>`;
+    }
+    
+    document.getElementById('priceContent').innerHTML = html;
+}
+
+init();
+</script>
+</body>
+</html>
