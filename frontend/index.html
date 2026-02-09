@@ -24,11 +24,11 @@ section{padding:60px 0}
 /* Nav */
 nav{background:#fff;border-bottom:1px solid var(--border);position:sticky;top:0;z-index:100;backdrop-filter:blur(10px);background:rgba(255,255,255,.92)}
 nav .container{display:flex;align-items:center;justify-content:space-between;height:56px}
-nav .logo{font-weight:700;font-size:1.1rem;color:var(--green);display:flex;align-items:center;gap:8px}
+nav .logo{font-weight:700;font-size:1.1rem;color:var(--green);display:flex;align-items:center;gap:8px;white-space:nowrap;flex-shrink:0}
 nav .nav-links{display:flex;gap:24px;font-size:.9rem}
 nav .nav-links a{color:var(--text-secondary);font-weight:500}
 nav .nav-links a:hover{color:var(--green);text-decoration:none}
-@media(max-width:600px){nav .nav-links{gap:12px;font-size:.8rem}}
+@media(max-width:600px){nav .logo{font-size:.9rem}nav .nav-links{gap:8px;font-size:.75rem}}
 
 /* Hero */
 .hero{background:linear-gradient(135deg,var(--green) 0%,var(--green-dark) 100%);color:#fff;padding:80px 0 60px;text-align:center;position:relative;overflow:hidden}
