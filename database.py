@@ -83,7 +83,6 @@ def upsert_commodity(conn: sqlite3.Connection, name: str, category: str = None,
     )
     row = cursor.fetchone()
     if row:
-        # Update category if it was null
         if category:
             conn.execute(
                 "UPDATE commodities SET category = ? WHERE id = ? AND category IS NULL",
@@ -179,19 +178,36 @@ def store_parsed_data(parsed_results: List[Dict], db_path: str = None):
 
 # === Query functions ===
 
-def get_prices_by_date(date: str, db_path: str = None) -> List[Dict]:
-    """Get all prices for a specific date."""
+def get_prices_by_date(date: str, page: int = 1, limit: int = 50, db_path: str = None) -> Dict:
+    """Get all prices for a specific date with pagination."""
     conn = get_db(db_path)
+    
+    total = conn.execute(
+        "SELECT COUNT(*) FROM prices p JOIN commodities c ON p.commodity_id = c.id WHERE p.date = ?",
+        (date,)
+    ).fetchone()[0]
+    
+    offset = (page - 1) * limit
     cursor = conn.execute("""
         SELECT c.name, c.category, c.specification, c.unit, p.price, p.date
         FROM prices p
         JOIN commodities c ON p.commodity_id = c.id
         WHERE p.date = ?
         ORDER BY c.category, c.name
-    """, (date,))
+        LIMIT ? OFFSET ?
+    """, (date, limit, offset))
     results = [dict(row) for row in cursor.fetchall()]
     conn.close()
-    return results
+    
+    return {
+        "prices": results,
+        "meta": {
+            "page": page,
+            "limit": limit,
+            "total": total,
+            "has_more": offset + limit < total,
+        }
+    }
 
 
 def get_latest_prices(db_path: str = None) -> Dict:
@@ -203,30 +219,49 @@ def get_latest_prices(db_path: str = None) -> Dict:
     conn.close()
     
     if latest_date:
-        prices = get_prices_by_date(latest_date, db_path)
-        return {"date": latest_date, "count": len(prices), "prices": prices}
+        data = get_prices_by_date(latest_date, page=1, limit=1000, db_path=db_path)
+        return {"date": latest_date, "count": data["meta"]["total"], "prices": data["prices"]}
     return {"date": None, "count": 0, "prices": []}
 
 
-def get_commodity_history(commodity_name: str, days: int = 30, db_path: str = None) -> List[Dict]:
-    """Get price history for a commodity."""
+def get_commodity_history(commodity_name: str, days: int = None,
+                          date_from: str = None, date_to: str = None,
+                          db_path: str = None) -> List[Dict]:
+    """Get price history for a commodity. Supports date range or days limit."""
     conn = get_db(db_path)
-    cursor = conn.execute("""
-        SELECT c.name, c.category, c.specification, p.price, p.date
-        FROM prices p
-        JOIN commodities c ON p.commodity_id = c.id
-        WHERE c.name LIKE ?
-        ORDER BY p.date DESC
-        LIMIT ?
-    """, (f"%{commodity_name}%", days))
+    
+    if date_from and date_to:
+        cursor = conn.execute("""
+            SELECT c.name, c.category, c.specification, p.price, p.date
+            FROM prices p
+            JOIN commodities c ON p.commodity_id = c.id
+            WHERE c.name LIKE ?
+            AND p.date >= ? AND p.date <= ?
+            ORDER BY p.date DESC
+        """, (f"%{commodity_name}%", date_from, date_to))
+    else:
+        limit = days or 30
+        cursor = conn.execute("""
+            SELECT c.name, c.category, c.specification, p.price, p.date
+            FROM prices p
+            JOIN commodities c ON p.commodity_id = c.id
+            WHERE c.name LIKE ?
+            ORDER BY p.date DESC
+            LIMIT ?
+        """, (f"%{commodity_name}%", limit))
+    
     results = [dict(row) for row in cursor.fetchall()]
     conn.close()
     return results
 
 
-def get_all_commodities(db_path: str = None) -> List[Dict]:
-    """Get all unique commodities."""
+def get_all_commodities(page: int = 1, limit: int = 50, db_path: str = None) -> Dict:
+    """Get all unique commodities with pagination."""
     conn = get_db(db_path)
+    
+    total = conn.execute("SELECT COUNT(*) FROM commodities").fetchone()[0]
+    offset = (page - 1) * limit
+    
     cursor = conn.execute("""
         SELECT c.id, c.name, c.category, c.specification, c.unit,
                COUNT(p.id) as price_count,
@@ -236,10 +271,86 @@ def get_all_commodities(db_path: str = None) -> List[Dict]:
         LEFT JOIN prices p ON c.id = p.commodity_id
         GROUP BY c.id
         ORDER BY c.category, c.name
+        LIMIT ? OFFSET ?
+    """, (limit, offset))
+    results = [dict(row) for row in cursor.fetchall()]
+    conn.close()
+    
+    return {
+        "commodities": results,
+        "meta": {
+            "page": page,
+            "limit": limit,
+            "total": total,
+            "has_more": offset + limit < total,
+        }
+    }
+
+
+def get_categories(db_path: str = None) -> List[Dict]:
+    """Get all unique categories with commodity counts."""
+    conn = get_db(db_path)
+    cursor = conn.execute("""
+        SELECT c.category, COUNT(DISTINCT c.id) as commodity_count,
+               COUNT(p.id) as price_count,
+               MIN(p.date) as first_date, MAX(p.date) as last_date
+        FROM commodities c
+        LEFT JOIN prices p ON c.id = p.commodity_id
+        WHERE c.category IS NOT NULL
+        GROUP BY c.category
+        ORDER BY c.category
     """)
     results = [dict(row) for row in cursor.fetchall()]
     conn.close()
     return results
+
+
+def get_prices_range(date_from: str, date_to: str, commodity: str = None,
+                     db_path: str = None) -> List[Dict]:
+    """Get prices for a date range, optionally filtered by commodity."""
+    conn = get_db(db_path)
+    
+    if commodity:
+        cursor = conn.execute("""
+            SELECT c.name, c.category, c.specification, c.unit, p.price, p.date
+            FROM prices p
+            JOIN commodities c ON p.commodity_id = c.id
+            WHERE p.date >= ? AND p.date <= ?
+            AND c.name LIKE ?
+            ORDER BY p.date, c.category, c.name
+        """, (date_from, date_to, f"%{commodity}%"))
+    else:
+        cursor = conn.execute("""
+            SELECT c.name, c.category, c.specification, c.unit, p.price, p.date
+            FROM prices p
+            JOIN commodities c ON p.commodity_id = c.id
+            WHERE p.date >= ? AND p.date <= ?
+            ORDER BY p.date, c.category, c.name
+        """, (date_from, date_to))
+    
+    results = [dict(row) for row in cursor.fetchall()]
+    conn.close()
+    return results
+
+
+def export_all(db_path: str = None):
+    """Generator that yields all price records for streaming export."""
+    conn = get_db(db_path)
+    cursor = conn.execute("""
+        SELECT p.date, c.category, c.name as commodity, c.specification, c.unit, p.price
+        FROM prices p
+        JOIN commodities c ON p.commodity_id = c.id
+        ORDER BY p.date, c.category, c.name
+    """)
+    
+    while True:
+        rows = cursor.fetchmany(1000)
+        if not rows:
+            break
+        for row in rows:
+            yield dict(row)
+    
+    conn.close()
 
 
 def get_date_range(db_path: str = None) -> Dict:
@@ -254,20 +365,31 @@ def get_date_range(db_path: str = None) -> Dict:
     return dict(row) if row else {}
 
 
-def search_prices(query: str, date: str = None, db_path: str = None) -> List[Dict]:
-    """Search commodities by name."""
+def search_prices(query: str, date: str = None, limit: int = 50, offset: int = 0,
+                  db_path: str = None) -> Dict:
+    """Search commodities by name with pagination."""
     conn = get_db(db_path)
     
     if date:
+        total = conn.execute(
+            "SELECT COUNT(*) FROM prices p JOIN commodities c ON p.commodity_id = c.id WHERE (c.name LIKE ? OR c.category LIKE ?) AND p.date = ?",
+            (f"%{query}%", f"%{query}%", date)
+        ).fetchone()[0]
+        
         cursor = conn.execute("""
             SELECT c.name, c.category, c.specification, c.unit, p.price, p.date
             FROM prices p
             JOIN commodities c ON p.commodity_id = c.id
             WHERE (c.name LIKE ? OR c.category LIKE ?) AND p.date = ?
             ORDER BY c.category, c.name
-        """, (f"%{query}%", f"%{query}%", date))
+            LIMIT ? OFFSET ?
+        """, (f"%{query}%", f"%{query}%", date, limit, offset))
     else:
-        # Get latest price for matching commodities
+        total = conn.execute(
+            "SELECT COUNT(*) FROM prices p JOIN commodities c ON p.commodity_id = c.id WHERE (c.name LIKE ? OR c.category LIKE ?) AND p.date = (SELECT MAX(date) FROM prices)",
+            (f"%{query}%", f"%{query}%")
+        ).fetchone()[0]
+        
         cursor = conn.execute("""
             SELECT c.name, c.category, c.specification, c.unit, p.price, p.date
             FROM prices p
@@ -275,11 +397,21 @@ def search_prices(query: str, date: str = None, db_path: str = None) -> List[Dic
             WHERE (c.name LIKE ? OR c.category LIKE ?)
             AND p.date = (SELECT MAX(date) FROM prices)
             ORDER BY c.category, c.name
-        """, (f"%{query}%", f"%{query}%"))
+            LIMIT ? OFFSET ?
+        """, (f"%{query}%", f"%{query}%", limit, offset))
     
     results = [dict(row) for row in cursor.fetchall()]
     conn.close()
-    return results
+    
+    return {
+        "results": results,
+        "meta": {
+            "limit": limit,
+            "offset": offset,
+            "total": total,
+            "has_more": offset + limit < total,
+        }
+    }
 
 
 def get_stats(db_path: str = None) -> Dict:

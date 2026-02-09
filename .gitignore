@@ -4,3 +4,4 @@ data/prices.db-shm
 __pycache__/
 *.pyc
 .vercel/
+data/prices.db.backup*
