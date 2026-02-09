@@ -227,17 +227,16 @@ Same as CSV but in JSON format.
 
 | Category | Commodities | Description |
 |----------|-------------|-------------|
-| LOCAL COMMERCIAL RICE | 4 | Locally-produced rice by grade |
-| IMPORTED COMMERCIAL RICE | 8 | Imported rice varieties |
+| IMPORTED COMMERCIAL RICE | 8 | Imported rice varieties (Premium, Well Milled, etc.) |
 | CORN PRODUCTS | 4 | Corn and corn derivatives |
-| FISH PRODUCTS | 12 | Fresh and frozen fish/seafood |
-| BEEF MEAT PRODUCTS | 2 | Beef cuts |
+| FISH PRODUCTS | 12 | Fresh fish and seafood (Galunggong, Bangus, Tilapia, etc.) |
+| BEEF MEAT PRODUCTS | 2 | Beef cuts (Brisket, Rump) |
 | PORK MEAT PRODUCTS | 1 | Fresh pork cuts |
-| FROZEN PORK PRODUCTS | 2 | Frozen pork products |
-| OTHER LIVESTOCK MEAT | 10 | Chicken, eggs |
-| VEGETABLES | 11 | Common vegetables |
-| FRUITS | 10 | Common fruits |
-| SPICES | 9 | Garlic, onion, ginger, salt |
+| FROZEN PORK PRODUCTS | 2 | Frozen imported pork |
+| OTHER LIVESTOCK MEAT | 10 | Chicken, eggs, and other meats |
+| VEGETABLES | 11 | Common vegetables (Tomato, Onion, Eggplant, etc.) |
+| FRUITS | 10 | Common fruits (Banana, Mango, Calamansi, etc.) |
+| SPICES | 9 | Garlic, onion, ginger, salt, chili |
 | COOKING OIL | 2 | Coconut and palm oil |
 
 ---
