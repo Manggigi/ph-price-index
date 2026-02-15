@@ -219,6 +219,51 @@ def _parse_commodity_line(line: str, lines: List[str], idx: int, category: str) 
     price_pattern = r'(\d{1,3}(?:,\d{3})*(?:\.\d{1,2})?)\s*$'
     na_pattern = r'n/a\s*$'
     
+    # Check if this line is a continuation of a wrapped specification from the previous line.
+    # DA PDFs often wrap long specs like:
+    #   "Broccoli, Local  Medium (8 -10 cm"
+    #   "diameter/bunch hd)  160.00"
+    # The second line starts with a lowercase word or spec fragment and has a price at the end.
+    if idx > 0:
+        prev_line = lines[idx - 1].strip() if idx - 1 < len(lines) else ""
+        # Detect continuation: line starts lowercase/paren/digit and previous line has NO price
+        starts_like_continuation = bool(re.match(r'^[a-z()\d]', line))
+        prev_has_no_price = not re.search(price_pattern, prev_line) and not re.search(na_pattern, prev_line, re.IGNORECASE)
+        prev_has_text = len(prev_line) > 5 and not _is_header_line(prev_line) and not _is_skip_line(prev_line)
+        
+        if starts_like_continuation and prev_has_no_price and prev_has_text:
+            # This is a wrapped line — merge with previous and parse the combined result
+            combined = prev_line + " " + line
+            price_match_c = re.search(price_pattern, combined)
+            na_match_c = re.search(na_pattern, combined, re.IGNORECASE)
+            
+            if price_match_c:
+                price_str = price_match_c.group(1).replace(",", "")
+                price = float(price_str)
+                text_part = combined[:price_match_c.start()].strip()
+            elif na_match_c:
+                price = None
+                text_part = combined[:na_match_c.start()].strip()
+            else:
+                return None
+            
+            if not text_part or len(text_part) < 2:
+                return None
+            
+            name, spec = _split_name_spec(text_part)
+            if not name or len(name) < 2:
+                return None
+            if name.upper() == name and len(name) > 30:
+                return None
+            
+            return {
+                "category": category,
+                "name": name.strip(),
+                "specification": spec.strip() if spec else None,
+                "price": price,
+                "unit": "PHP/kg",
+            }
+
     # Try to find price at end of line
     price_match = re.search(price_pattern, line)
     na_match = re.search(na_pattern, line, re.IGNORECASE)
