@@ -6,9 +6,12 @@ import os
 import sys
 import io
 import csv
+import time
+import json as jsonlib
+from datetime import datetime, timedelta
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
-from fastapi import FastAPI, Query, HTTPException
+from fastapi import FastAPI, Query, HTTPException, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, StreamingResponse
 from typing import Optional
@@ -17,6 +20,13 @@ from database import (
     get_all_commodities, get_date_range, search_prices, get_stats,
     get_categories, get_prices_range, export_all
 )
+
+# ============================================================
+# Dashboard Cache — computed once, served to all users
+# ============================================================
+_dashboard_cache = {}
+_dashboard_cache_ts = 0
+DASHBOARD_CACHE_TTL = 3600  # 1 hour
 
 API_VERSION = "2.0.0"
 
@@ -80,11 +90,12 @@ def root():
 
 
 @app.get("/api/prices/latest")
-def latest_prices():
+def latest_prices(response: Response):
     """Get the most recent available prices."""
     data = get_latest_prices()
     if not data["prices"]:
         raise HTTPException(status_code=404, detail="No price data available")
+    response.headers["Cache-Control"] = "public, max-age=3600"
     return data
 
 
@@ -260,6 +271,114 @@ def stats():
 def dates():
     """Get available date range."""
     return get_date_range()
+
+
+# ============================================================
+# DASHBOARD — Pre-computed, cached, single-call endpoint
+# ============================================================
+
+def _build_dashboard():
+    """Pre-compute the entire AnoMura dashboard payload."""
+    stats_data = get_stats()
+    latest_data = get_latest_prices()
+    latest_prices = latest_data.get("prices", [])
+    latest_date = latest_data.get("date", "")
+
+    # Pre-compute for all 3 time ranges
+    periods = {}
+    for label, days in [("30d", 30), ("90d", 90), ("1y", 365)]:
+        to_date = latest_date
+        from_dt = datetime.strptime(latest_date, "%Y-%m-%d") - timedelta(days=days)
+        from_date = from_dt.strftime("%Y-%m-%d")
+        range_prices = get_prices_range(from_date, to_date)
+
+        # Group history by name+spec (the key fix for zigzag)
+        hist_map = {}
+        for p in range_prices:
+            key = f"{p['name']}||{p.get('specification', '')}"
+            if key not in hist_map:
+                hist_map[key] = []
+            hist_map[key].append(p["price"])
+
+        # Build per-commodity signals
+        items = []
+        for item in latest_prices:
+            key = f"{item['name']}||{item.get('specification', '')}"
+            prices = hist_map.get(key, [])
+            avg = sum(prices) / len(prices) if prices else item["price"]
+            change_pct = ((item["price"] - avg) / avg) * 100 if avg else 0
+
+            signal = "STABLE"
+            if change_pct < -5:
+                signal = "MURA"
+            elif change_pct > 10:
+                signal = "MAHAL"
+
+            # Clean display name
+            clean_name = item["name"].rstrip(", ")
+            spec = item.get("specification", "")
+            display_name = f"{clean_name} ({spec})" if spec and spec != clean_name else clean_name
+
+            # Compact sparkline: downsample to max 30 points
+            sparkline = prices
+            if len(sparkline) > 30:
+                step = len(sparkline) / 30
+                sparkline = [sparkline[int(i * step)] for i in range(30)]
+
+            items.append({
+                "name": item["name"],
+                "displayName": display_name,
+                "category": item.get("category", ""),
+                "specification": spec,
+                "unit": item.get("unit", "PHP/kg"),
+                "price": item["price"],
+                "avg": round(avg, 2),
+                "changePct": round(change_pct, 2),
+                "signal": signal,
+                "sparkline": [round(p, 2) for p in sparkline],
+            })
+
+        items.sort(key=lambda x: x["changePct"])
+
+        best_deals = [i for i in items if i["signal"] == "MURA"][:5]
+        getting_expensive = sorted(
+            [i for i in items if i["signal"] == "MAHAL"],
+            key=lambda x: -x["changePct"]
+        )[:5]
+
+        periods[label] = {
+            "items": items,
+            "bestDeals": best_deals,
+            "gettingExpensive": getting_expensive,
+        }
+
+    return {
+        "stats": stats_data,
+        "latestDate": latest_date,
+        "priceCount": len(latest_prices),
+        "periods": periods,
+        "generatedAt": datetime.utcnow().isoformat() + "Z",
+    }
+
+
+@app.get("/api/dashboard")
+def dashboard(response: Response):
+    """
+    Pre-computed dashboard for AnoMura.
+    Returns stats, latest prices with signals, best deals, getting expensive,
+    and sparkline data for 30D/90D/1Y — all in one call.
+    Cached server-side for 1 hour.
+    """
+    global _dashboard_cache, _dashboard_cache_ts
+
+    now = time.time()
+    if not _dashboard_cache or (now - _dashboard_cache_ts) > DASHBOARD_CACHE_TTL:
+        _dashboard_cache = _build_dashboard()
+        _dashboard_cache_ts = now
+
+    # Tell browsers + CDN to cache for 1 hour
+    response.headers["Cache-Control"] = "public, max-age=3600, s-maxage=3600"
+    return _dashboard_cache
 
 
 if __name__ == "__main__":
